@@ -9,11 +9,11 @@ import hashlib
 import pickle
 import time
 from pathlib import Path
-from tools import ToolRegistry, WebSearchTool, default_registry
-from tools.backtest_registry import BacktestToolRegistry
-from utils.question_analyzer import QuestionAnalyzer
-from utils.stock_data import StockDataRetriever
-from utils.backtest_stock_data import BacktestStockDataRetriever
+from .tools import ToolRegistry, WebSearchTool, default_registry
+from .tools.backtest_registry import BacktestToolRegistry
+from .utils.question_analyzer import QuestionAnalyzer
+from .utils.stock_data import StockDataRetriever
+from .utils.backtest_stock_data import BacktestStockDataRetriever
 
 class ForecastingSystem:
     def __init__(self, model="o3", tools_registry=None, cache_dir=".forecast_cache", max_retries=3, max_workers=4, analyzer_model="gpt-4o", disable_cache=False):
@@ -66,7 +66,7 @@ class ForecastingSystem:
             
             # 2. Stock data tool using Alpha Vantage
             if os.getenv("ALPHA_VANTAGE_API_KEY"):
-                from tools.stock_data import StockDataTool
+                from .tools.stock_data import StockDataTool
                 stock_data_tool = StockDataTool(cache_dir=f"{tools_cache_dir}/.stock_cache")
                 self.tools_registry.register(stock_data_tool)
                 self._has_stock_data = True
@@ -77,7 +77,7 @@ class ForecastingSystem:
             
             # 3. Crypto data tool using CoinGecko
             try:
-                from tools.crypto_data import CryptoDataTool
+                from .tools.crypto_data import CryptoDataTool
                 crypto_data_tool = CryptoDataTool(cache_dir=f"{tools_cache_dir}/.crypto_cache")
                 self.tools_registry.register(crypto_data_tool)
                 self._has_crypto_data = True
@@ -88,7 +88,7 @@ class ForecastingSystem:
             
             # 4. Query classifier
             try:
-                from tools.query_classifier import QueryClassifier
+                from .tools.query_classifier import QueryClassifier
                 self.query_classifier = QueryClassifier(model="o3")
                 print("[Setup] Query classifier initialized")
             except Exception as e:
