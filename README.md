@@ -82,6 +82,30 @@ For general forecasting questions with web search:
 python src/main.py --question "Is it likely that atmospheric CO2 will exceed 450ppm by 2030?" --verbose
 ```
 
+### Multi-Asset Forecasting
+
+For forecasting multiple assets at once, use the multi-asset forecasting tool:
+
+```bash
+# Forecast multiple stocks
+python test/examples/multi_forecast.py --assets AAPL,MSFT,GOOGL,AMZN,META --type stock
+
+# Forecast multiple cryptocurrencies
+python test/examples/multi_forecast.py --assets BTC,ETH,SOL,DOGE,ADA --type crypto
+```
+
+Or use the provided shell script for convenience:
+
+```bash
+# For stocks
+./test/examples/run_multi_forecast.sh --stocks --assets "AAPL,MSFT,NVDA,AMD,INTC"
+
+# For cryptocurrencies
+./test/examples/run_multi_forecast.sh --crypto --assets "BTC,ETH,SOL,DOT,ADA"
+```
+
+See `test/examples/README.md` for more details on multi-asset forecasting options.
+
 ## Implementation Details
 
 The system implements several types of consistency checks:
