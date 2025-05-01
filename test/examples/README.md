@@ -41,7 +41,7 @@ python multi_forecast.py --assets BTC,ETH,SOL,ADA,DOT --type crypto --timeframe 
 You can customize the forecast direction and other parameters:
 
 ```bash
-python multi_forecast.py --assets AAPL,MSFT,GOOGL --type stock --timeframe "end of year" --direction decrease --num_checks 5 --model gpt-4o
+python multi_forecast.py --assets AAPL,MSFT,GOOGL --type stock --timeframe "end of year" --direction decrease --num_checks 5 --model gpt-4o --max_workers 3
 ```
 
 ## Command Line Arguments
@@ -54,7 +54,36 @@ python multi_forecast.py --assets AAPL,MSFT,GOOGL --type stock --timeframe "end 
 | `--direction` | Direction of forecast (increase, decrease, change) | "increase" |
 | `--num_checks` | Number of consistency checks to run | 3 |
 | `--model` | Model to use for forecasting | "o3" |
+| `--max_workers` | Number of parallel forecasts to run | 3 |
 | `--verbose` | Show verbose output | False |
+
+## Parallel Processing
+
+The tool now supports parallel processing to generate multiple forecasts simultaneously:
+
+- Utilizes Python's `concurrent.futures` ThreadPoolExecutor for parallel execution
+- Default of 3 concurrent workers, but can be adjusted with `--max_workers`
+- Intelligently distributes workload to maximize efficiency
+- Shows performance metrics comparing parallel vs. sequential execution time
+
+Example with parallel processing:
+
+```bash
+# Run 5 crypto forecasts with 3 parallel workers
+./run_multi_forecast.sh --crypto --assets "BTC,ETH,SOL,DOGE,ADA" --workers 3
+
+# Run 10 stock forecasts with 5 parallel workers for maximum speed
+python multi_forecast.py --assets "AAPL,MSFT,GOOGL,AMZN,META,NVDA,INTC,AMD,TSLA,JPM" --type stock --max_workers 5
+```
+
+The script will display time saved through parallelization at the end of execution:
+
+```
+Completed forecasts for 5 assets in 157.32 seconds.
+Average time per asset: 31.46 seconds
+Estimated sequential execution time: 283.65 seconds
+Time saved through parallelization: 126.33 seconds (44.5%)
+```
 
 ## Output
 
@@ -97,7 +126,7 @@ Example API usage summary:
 ================================================================================
 API USAGE SUMMARY
 ================================================================================
-Model: GPT-4o
+Model: GPT-4o Omni (o3)
 Total tokens used: 89,325 tokens
   - Input tokens:  56,428 tokens
   - Output tokens: 32,897 tokens
@@ -105,13 +134,13 @@ API calls: 22
 Elapsed time: 186.42 seconds
 
 Pricing information:
-  - Input price:  $2.50 per 1M tokens
-  - Output price: $10.00 per 1M tokens
+  - Input price:  $10.00 per 1M tokens
+  - Output price: $40.00 per 1M tokens
 
 Estimated cost:
-  - Input cost:  $0.1411
-  - Output cost: $0.3290
-  - Total cost:  $0.4701
+  - Input cost:  $0.5643
+  - Output cost: $0.9869
+  - Total cost:  $1.5512
 ================================================================================
 ```
 

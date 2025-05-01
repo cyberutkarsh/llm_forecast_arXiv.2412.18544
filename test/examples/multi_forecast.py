@@ -12,6 +12,7 @@ import os
 import sys
 import argparse
 import time
+import concurrent.futures
 from typing import List, Dict, Any
 from tqdm import tqdm
 from dotenv import load_dotenv
@@ -50,6 +51,8 @@ def parse_args():
                       help="Model to use for forecasting")
     parser.add_argument("--verbose", action="store_true",
                       help="Show verbose output")
+    parser.add_argument("--max_workers", type=int, default=3,
+                      help="Maximum number of parallel forecasts to run")
     return parser.parse_args()
 
 def get_forecast_question(asset: str, asset_type: str, timeframe: str, direction: str) -> str:
@@ -60,9 +63,45 @@ def get_forecast_question(asset: str, asset_type: str, timeframe: str, direction
     else:  # crypto
         return f"Will the price of {asset} {direction} in the {timeframe}?"
 
+def process_single_asset(args):
+    """Process a single asset for forecasting."""
+    asset, asset_type, timeframe, direction, num_checks, model, verbose, forecaster, token_tracker = args
+    
+    question = get_forecast_question(asset, asset_type, timeframe, direction)
+    print(f"\nProcessing: {question}")
+    
+    try:
+        # Generate forecast
+        start_time = time.time()
+        result = forecaster.generate_forecast(
+            question=question,
+            num_checks=num_checks,
+            verbose=verbose
+        )
+        execution_time = time.time() - start_time
+        
+        # Add metadata to result
+        result["asset"] = asset
+        result["asset_type"] = asset_type
+        result["question"] = question
+        result["execution_time"] = execution_time
+        
+        # Update token tracker with any usage from this forecast
+        if hasattr(forecaster, "stats") and "api_calls" in forecaster.stats:
+            # Add the API call count to our tracking
+            token_tracker.api_calls += forecaster.stats["api_calls"]
+            
+        print(f"✓ Completed forecast for {asset} in {execution_time:.2f} seconds")
+        return result
+        
+    except Exception as e:
+        print(f"✗ Error generating forecast for {asset}: {str(e)}")
+        return None
+
 def generate_forecasts(assets: List[str], asset_type: str, timeframe: str, 
-                       direction: str, num_checks: int, model: str, verbose: bool) -> Dict[str, Any]:
-    """Generate forecasts for multiple assets."""
+                       direction: str, num_checks: int, model: str, 
+                       verbose: bool, max_workers: int) -> Dict[str, Any]:
+    """Generate forecasts for multiple assets in parallel."""
     
     results = []
     
@@ -114,33 +153,33 @@ def generate_forecasts(assets: List[str], asset_type: str, timeframe: str,
             forecaster.tools_registry.deregister("stock_data")
             forecaster._has_stock_data = False
     
-    # Generate forecasts for each asset
-    print(f"\nGenerating forecasts for {len(assets)} {asset_type}s...")
-    for asset in tqdm(assets, desc=f"Forecasting {asset_type}s"):
-        question = get_forecast_question(asset, asset_type, timeframe, direction)
-        print(f"\nProcessing: {question}")
+    # Determine number of workers (default to min of asset count and max_workers)
+    num_workers = min(max_workers, len(assets))
+    print(f"\nGenerating forecasts for {len(assets)} {asset_type}s using {num_workers} parallel workers...")
+    
+    # Process assets in parallel
+    with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
+        # Create arguments for each asset
+        asset_args = [
+            (asset, asset_type, timeframe, direction, num_checks, model, verbose, forecaster, token_tracker)
+            for asset in assets
+        ]
         
-        try:
-            # Generate forecast
-            start_time = time.time()
-            result = forecaster.generate_forecast(
-                question=question,
-                num_checks=num_checks,
-                verbose=verbose
-            )
-            execution_time = time.time() - start_time
-            
-            # Add metadata to result
-            result["asset"] = asset
-            result["asset_type"] = asset_type
-            result["question"] = question
-            result["execution_time"] = execution_time
-            
-            results.append(result)
-            print(f"✓ Completed forecast for {asset} in {execution_time:.2f} seconds")
-            
-        except Exception as e:
-            print(f"✗ Error generating forecast for {asset}: {str(e)}")
+        # Submit all tasks and process as they complete
+        futures = {executor.submit(process_single_asset, args): args[0] for args in asset_args}
+        
+        # Use tqdm to show progress
+        with tqdm(total=len(assets), desc=f"Forecasting {asset_type}s") as progress_bar:
+            for future in concurrent.futures.as_completed(futures):
+                asset = futures[future]
+                try:
+                    result = future.result()
+                    if result is not None:
+                        results.append(result)
+                except Exception as e:
+                    print(f"✗ Error processing {asset}: {str(e)}")
+                finally:
+                    progress_bar.update(1)
     
     # Restore original LLM call method if we patched it
     if original_llm_call:
@@ -263,6 +302,9 @@ def main():
     # Process asset list
     assets = [asset.strip() for asset in args.assets.split(",")]
     
+    # Time the entire process
+    total_start_time = time.time()
+    
     # Generate forecasts
     results = generate_forecasts(
         assets=assets,
@@ -271,8 +313,12 @@ def main():
         direction=args.direction,
         num_checks=args.num_checks,
         model=args.model,
-        verbose=args.verbose
+        verbose=args.verbose,
+        max_workers=args.max_workers
     )
+    
+    # Calculate total execution time
+    total_execution_time = time.time() - total_start_time
     
     # Sort results by confidence
     sorted_results = sort_results(results)
@@ -280,7 +326,20 @@ def main():
     # Display results
     display_results(sorted_results)
     
-    print(f"\nCompleted forecasts for {len(results['forecasts'])} assets.")
+    # Show total execution time
+    print(f"\nCompleted forecasts for {len(results['forecasts'])} assets in {total_execution_time:.2f} seconds.")
+    
+    if len(assets) > 1:
+        # Calculate average time per asset
+        avg_time = total_execution_time / len(assets)
+        # Calculate estimated sequential time
+        sequential_time = sum(result.get("execution_time", 0) for result in results["forecasts"])
+        # Calculate time saved through parallelization
+        time_saved = sequential_time - total_execution_time
+        
+        print(f"Average time per asset: {avg_time:.2f} seconds")
+        print(f"Estimated sequential execution time: {sequential_time:.2f} seconds")
+        print(f"Time saved through parallelization: {time_saved:.2f} seconds ({(time_saved/sequential_time*100):.1f}%)")
     
     return sorted_results
 
